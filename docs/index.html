@@ -18,48 +18,55 @@
     <section class="card">
       <div class="card-header">直近7日＋当日の時系列（kWh）</div>
       <canvas id="tsChart"></canvas>
-      <div class="hint">グラフは 60 秒ごとに最新データへ更新します。CSV: <code>/docs/data/pv_log.csv</code></div>
+      <div class="hint">グラフは 60 秒ごとに最新データへ更新します。データ: <code>/docs/data/pv_log.csv</code></div>
     </section>
   </main>
 
-  <footer class="footer">
-    <div>© PV Logger</div>
-  </footer>
+  <footer class="footer">© PV Logger</footer>
 
   <script>
-    async function loadCSV() {
-      const res = await fetch('./data/pv_log.csv', { cache: 'no-store' });
-      const text = await res.text();
-      const lines = text.trim().split(/\r?\n/);
+    const CSV_PATH = './data/pv_log.csv';
+
+    async function loadCsv() {
+      const res = await fetch(CSV_PATH, { cache: 'no-store' });
+      if (!res.ok) throw new Error('CSV fetch failed: ' + res.status);
+      const text = await res.readable ? await res.text() : await res.text();
+      const lines = text.trim().split(/\\r?\\n/);
       if (lines.length < 2) return { labels: [], series: {} };
+
       const header = lines.shift().split(',');
-      const iTime = header.indexOf('page_time_jst');
       const idx = {
-        gen: header.indexOf('gen_kwh'),
+        time: header.indexOf('page_time_jst'),
+        gen:  header.indexOf('gen_kh') >= 0 ? header.indexOf('gen_kh') : header.indexOf('gen_kwh'),
         cons: header.indexOf('cons_kwh'),
         sell: header.indexOf('sell_kwh'),
-        buy: header.indexOf('buy_kwh'),
-        self: header.indexOf('self_kwh'),
+        buy:  header.indexOf('buy_kwh'),
+        self: header.indexOf('self_kwh')
       };
+
       const labels = [];
-      const S = { '発電': [], '消費': [], '売電': [], '買電': [], '自家消費': [] };
-      for (const row of lines) {
-        const c = row.split(',');
-        if (!c[iTime]) continue;
-        labels.push(c[iTime].replace('T',' ').slice(0,16));
-        const toNum = v => { const n = Number(v); return Number.isFinite(n) ? n : null; };
-        S['発電'].push(toNum(c[idx.gen]));
-        S['消費'].push(toNum(c[idx.cons]));
-        S['売電'].push(toNum(c[idx.sell]));
-        S['買電'].push(toNum(c[idx.buy]));
-        S['自家消費'].push(toNum(c[idx.self]));
+      const series = { '発電': [], '消費': [], '売電': [], '買電': [], '自家消費': [] };
+      for (const line of lines) {
+        const c = line.split(',');
+        const t = c[idx.time];
+        if (!t) continue;
+        const toNum = v => {
+          const n = Number(v);
+          return Number.isFinite(n) ? n : null;
+        };
+        labels.push(t.replace('T', ' ').slice(0, 16));
+        series['発電'].push(toNum(c[idx.gen]));
+        series['消費'].push(toNum(c[idx.cons]));
+        series['売電'].push(toNum(c[idx.sell]));
+        series['買電'].push(toNum(c[idx.buy]));
+        series['自家消費'].push(toNum(c[idx.self]));
       }
-      return { labels, S };
+      return { labels, series };
     }
 
     function makeChart(ctx, payload) {
-      const datasets = Object.entries(payload.S).map(([label, data]) => ({
-        label, data, tension:0.25, borderWidth:2, pointRadius:0
+      const datasets = Object.entries(payload.series).map(([label, data]) => ({
+        label, data, tension: 0.25, borderWidth: 2, pointRadius: 0
       }));
       return new Chart(ctx, {
         type: 'line',
@@ -77,41 +84,29 @@
     (async () => {
       try {
         const ctx = document.getElementById('tsChart').getContext('2d');
-        let payload = await loadCSV();
-        let chart = make {# placeholder, to be replaced #}
+        const payload = await loadCsv();
+        const chart = makeChart(ctx, payload);
+        document.getElementById('last-updated').textContent =
+          payload.labels[payload.labels.length - 1] || '—';
+
+        // 60秒ごとに再読込
+        setInterval(async () => {
+          try {
+            const p = await loadCsv();
+            chart.data.labels = p.labels;
+            chart.data.datasets = Object.entries(p.series).map(([label, data]) => ({
+              label, data, tension: 0.25, pointRadius: 0, borderWidth: 2
+            }));
+            document.getElementById('last-updated').textContent =
+              p.labels[p.labels.length - 1] || '—';
+            chart.update();
+          } catch (e) {
+            console.error(e);
+          }
+        }, 60000);
       } catch (e) {
         console.error(e);
-        document.querySelector('.hint').textContent = 'データ読込に失敗しました。CSVの公開設定とパス(./data/pv_log.csv)を確認してください。';
       }
-
-      async function refresh() {
-        try {
-          const p = await loadCSV();
-          if (window._chart) {
-            window._chart.data.labels = p.labels;
-            window._chart.data.datasets = Object.entries(p.S).map(([label,data])=>({label, data, tension:0.25, borderWidth:2, pointRadius:0}));
-            document.getElementById('last-updated').textContent = p.labels[p.labels.length-1] || '—';
-            window._chart.update();
-          } else {
-            const ctx2 = document.getElementById('tsChart').getContext('2d');
-            const ds = Object.entries(p.S).map(([label,data])=>({label, data, tension:0.25, borderWidth:2, pointRadius:0}));
-            window._chart = new Chart(ctx2, { type:'linear', data:{labels:p.labels, datasets:ds}, options:{
-              responsive:true, maintainAspectRatio:false, interaction:{mode:'nearest',intersect:false},
-              plugins:{legend:{position:'bottom'}}, scales:{x:{ticks:{maxTicksLimit:12}}, y:{beginAtZero:true}}
-            }});
-            document.getElementById('last-updated').textContent = p.labels[p.labels.length-1] || '—';
-          }
-        } catch(e) { console.error(e); }
-      }
-      // Initial render
-      const p0 = await loadCSV();
-      const ds0 = Object.entries(p0.S).map(([label,data])=>({label, data, tension:0.25, borderWidth:2, pointRadius:0}));
-      window._chart = new Chart(ctx, { type:'line', data:{labels:p0.labels, datasets:ds0}, options:{
-        responsive:true, maintainAspectRatio:false, interaction:{mode:'nearest',intersect:false},
-        plugins:{legend:{position:'bottom'}}, scales:{x:{ticks:{maxTicksLimit:12}}, y:{beginAtZero:true}}
-      }});
-      document.getElementById('last-updated').textContent = p0.labels[p0.labels.length-1] || '—';
-      setInterval(refresh, 60000);
     })();
   </script>
 </body>

@@ -3,31 +3,101 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="robots" content="noindex,nofollow" />
-  <title>CSVアクセス確認</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <title>PV Logger — 直近ログ</title>
   <style>
-    body { background:#0b1020; color:#e8eefc; font-family:system-ui; margin:0; padding:1em; }
-    pre { background:#141a2a; padding:1em; border-radius:8px; overflow-x:auto; white-space:pre-wrap; }
+    :root { --bg:#0b1020; --fg:#e8eefc; --card:#141a2a; --muted:#8aa0b3; }
+    *{ box-sizing:border-box }
+    body{ margin:0; background:var(--bg); color:var(--fg); font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto }
+    header{ padding:16px 20px; border-bottom:1px solid rgba(255,255,255,.12); display:flex; justify-content:space-between; align-items:center }
+    .title{ font-size:20px; font-weight:700 }
+    .subtitle{ font-size:14px; color:var(--muted) }
+    main{ max-width:1100px; margin:0 auto; padding:16px }
+    .card{ background:var(--card); border-radius:12px; padding:12px; box-shadow:0 6px 20px rgba(0,0,0,.25) }
+    h2{ margin:4px 0 12px 0; font-size:18px }
+    .table-wrap{ overflow-x:auto }
+    table{ width:100%; border-collapse:collapse; font-size:14px }
+    th, td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); white-space:nowrap; text-align:left }
+    tr:hover{ background:rgba(255,255,255,0.06) }
+    .muted{ color:var(--muted); margin-top:8px }
   </style>
 </head>
 <body>
-  <h1>CSVアクセス確認</h1>
-  <p>以下に <code>./data/pv_log.csv</code> の内容を表示します。</p>
-  <pre id="output">読み込み中...</pre>
+  <header>
+    <div class="title">PV Logger</div>
+    <div class="subtitle">最終更新: <span id="last-updated">—</span></div>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>直近ログ（<code>docs/data/pv_log.csv</code>）</h2>
+      <div class="table-wrap">
+        <table id="tbl">
+          <thead id="thead"></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="muted">※ CSVは30分ごとに更新されます（ブラウザをリロードして最新を表示）。</div>
+    </div>
+  </main>
 
   <script>
     const CSV_PATH = './data/pv_log.csv';
-    fetch(CSV_PATH + '?t=' + Date.now(), { cache: 'no-store' })
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.text();
-      })
-      .then(text => {
-        document.getElementById('output').textContent = text || '(ファイルは空です)';
-      })
-      .catch(err => {
-        document.getElementById('output').textContent = '読み込みエラー: ' + err;
+
+    async function loadCsv() {
+      const res = await fetch(CSV_PATH + '?t=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) throw new Error('CSV 読み込み失敗: ' + res.status);
+      const text = await res.text();
+      const lines = text.trim().split(/\\r?\\n/);
+      if (!lines.length) return { header:[], rows:[] };
+      const header = lines.shift().split(',');
+      const rows = lines.map(l => l.split(','));
+      return { header, rows };
+    }
+
+    function renderTable({ header, rows }) {
+      const thead = document.getElementById('thead');
+      const tbody = document.getElementById('tbody');
+      thead.innerHTML = '';
+      tbody.innerHTML = '';
+
+      // ヘッダ
+      const htr = document.createElement('tr');
+      header.forEach(h => {
+        const th = document.createElement('th');
+        th.textContent = h;
+        htr.appendChild(th);
       });
+      thead.appendChild(htr);
+
+      // 行
+      rows.forEach(cols => {
+        const tr = document.createElement('tr');
+        cols.forEach(c => {
+          const td = document.createElement('td');
+          td.textContent = c || '—';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      // 最終更新日時
+      const iTime = header.indexOf('page_time_jst');
+      if (iTime >= 0 && rows.length) {
+        const last = rows[rows.length - 1][iTime];
+        document.getElementById('last-updated').textContent = last || '—';
+      }
+    }
+
+    // ページ読み込み時に1回だけ実行
+    (async () => {
+      try {
+        const data = await loadCsv();
+        renderTable(data);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
   </script>
 </body>
 </html>

@@ -40,7 +40,7 @@ def load_cfg() -> Cfg:
     ).split(",")]
     if len(sels) < 5:
         raise SystemExit("METRIC_SELECTORS は5本必要です")
-    data_csv = Path("gh_pages/data/pv_log.csv")
+    data_csv = Path("docs/data/pv_log.csv")
     data_csv.parent.mkdir(parents=True, exist_ok=True)
     return Cfg(login, dash, user, pw, us, ps, sb, time_sel, sels, data_csv)
 

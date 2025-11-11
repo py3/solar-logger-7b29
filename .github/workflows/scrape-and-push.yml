@@ -1,0 +1,38 @@
+name: scrape-and-push
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # 30分ごと
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install -r gh_pages/requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run scraper
+        env:
+          PV_USERNAME: ${{ secrets.PV_USERNAME }}
+          PV_PASSWORD: ${{ secrets.PV_PASSWORD }}
+        run: |
+          python gh_pages/pv_logger.py
+
+      - name: Commit & push CSV
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gh_pages/data/pv_log.csv
+          git commit -m "Update pv_log.csv [skip ci]" || echo "No changes"
+          git push

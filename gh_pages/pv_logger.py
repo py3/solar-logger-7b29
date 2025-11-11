@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os, re, datetime as dt
+import os
+import re
+import time
+import datetime as dt
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -72,6 +75,7 @@ def run_once():
                 page.wait_for_selector(cfg.sels[-1], timeout=15000)
             except PWTimeout:
                 pass
+            time.sleep(5)
             data = {}
             el = page.query_selector(cfg.time_sel)
             data["page_time"] = el.inner_text().strip() if el else None

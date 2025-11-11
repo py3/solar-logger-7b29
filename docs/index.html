@@ -3,110 +3,166 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="robots" content="noindex,nofollow" />
-  <title>PV Logger Dashboard</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <title>PV Logger</title>
   <link rel="stylesheet" href="./style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { --bg:#0b1020; --fg:#e8eefc; --card:#141a2a; --muted:#8aa0b3; }
+    *{ box-sizing:border-box }
+    body{ margin:0; background:var(--bg); color:var(--fg); font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto }
+    header{ padding:16px 20px; border-bottom:1px solid rgba(255,255,255,.12); display:flex; justify-content:space-between; align-items:center }
+    .title{ font-size:20px; font-weight:700 }
+    .subtitle{ font-size:14px; color:var(--muted) }
+    .container{ max-width:1000px; margin:0 auto; padding:16px }
+    .card{ background:var(--card); border-radius:12px; padding:12px; box-shadow:0 6px 20px rgba(0,0,0,.25) }
+    .card h2{ margin:4px 0 12px 0; font-size:18px }
+    .table-wrap{ overflow-x:auto }
+    table{ width:100%; border-collapse:collapse; font-size:14px }
+    th, td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); white-space:nowrap }
+    th{ text-align:left; color:#a8b3c2; font-weight:600 }
+    tr:hover{ background:rgba(255,255,255,0.05) }
+    .muted{ color:var(--muted) }
+    .nowrap{ white-space:nowrap }
+    .totals{ display:flex; gap:16px; flex-wrap:wrap; margin:12px 0 16px }
+    .pill{ background:#0f1a30; padding:8px 12px; border-radius:999px; font-size:13px }
+    footer{ text-align:center; padding:16px; color:var(--muted) }
+  </style>
 </head>
 <body>
-  <header class="header">
-    <div class="title">PV Logger</div>
+  <header>
+    <div class="title">PV&nbsp;Logger</div>
     <div class="subtitle">最終更新: <span id="last-updated">—</span></div>
   </header>
 
   <main class="container">
-    <section class="card">
-      <div class="card-header">直近7日＋当日の時系列（kWh）</div>
-      <canvas id="tsChart"></canvas>
-      <div class="hint">グラフは 60 秒ごとに最新データへ更新します。データ: <code>/docs/data/pv_log.csv</code></div>
-    </section>
+    <div class="card">
+      <h2>直近7日＋当日の時系列（kWh）</h2>
+
+      <div class="totals" id="totals"></div>
+
+      <div class="table-wrap">
+        <table id="tbl">
+          <thead>
+            <tr>
+              <th class="nowrap">時刻</th>
+              <th>発電</th>
+              <th>消費</th>
+              <th>売電</th>
+              <th>買電</th>
+              <th>自家消費</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <!-- rows injected by JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="muted" style="margin-top:8px">
+        1分ごとに更新します。データ: <code>./data/pv_log.csv</code>
+      </div>
+    </div>
   </main>
 
-  <footer class="footer">© PV Logger</footer>
+  <footer>© PV&nbsp;Logger</footer>
 
   <script>
     const CSV_PATH = './data/pv_log.csv';
 
-    async function loadCsv() {
-      const res = await fetch(CSV_PATH, { cache: 'no-store' });
+    async function fetchCsv() {
+      const res = await fetch(CSV_PATH + '?t=' + Date.now(), { cache:'no-store' });
       if (!res.ok) throw new Error('CSV fetch failed: ' + res.status);
-      const text = await res.readable ? await res.text() : await res.text();
-      const lines = text.trim().split(/\\r?\\n/);
-      if (lines.length < 2) return { labels: [], series: {} };
+      return await res.text();
+    }
 
+    function parseCsv(text) {
+      const lines = text.trim().split(/\\r?\\n/);
+      if (lines.length < 2) return [];
       const header = lines.shift().split(',');
       const idx = {
         time: header.indexOf('page_time_jst'),
-        gen:  header.indexOf('gen_kh') >= 0 ? header.indexOf('gen_kh') : header.indexOf('gen_kwh'),
+        gen:  header.indexOf('gen_kwh'),
         cons: header.indexOf('cons_kwh'),
         sell: header.indexOf('sell_kwh'),
         buy:  header.indexOf('buy_kwh'),
-        self: header.indexOf('self_kwh')
+        self: header.indexOf('self_kwh'),
       };
-
-      const labels = [];
-      const series = { '発電': [], '消費': [], '売電': [], '買電': [], '自家消費': [] };
+      const rows = [];
       for (const line of lines) {
-        const c = line.split(',');
-        const t = c[idx.time];
-        if (!t) continue;
-        const toNum = v => {
-          const n = Number(v);
-          return Number.isFinite(n) ? n : null;
+        const cols = line.split(',');
+        const rec = {
+          time: cols[idx.time] ? cols[idx.time].replace('T',' ').slice(0,16) : '',
+          gen:  cols[idx.gen]  || '',
+          cons: cols[idx.cons] || '',
+          sell: cols[idx.sell] || '',
+          buy:  cols[idx.buy]  || '',
+          self: cols[idx.self] || ''
         };
-        labels.push(t.replace('T', ' ').slice(0, 16));
-        series['発電'].push(toNum(c[idx.gen]));
-        series['消費'].push(toNum(c[idx.cons]));
-        series['売電'].push(toNum(c[idx.sell]));
-        series['買電'].push(toNum(c[idx.buy]));
-        series['自家消費'].push(toNum(c[idx.self]));
+        rows.push(rec);
       }
-      return { labels, series };
+      return rows;
     }
 
-    function makeChart(ctx, payload) {
-      const datasets = Object.entries(payload.series).map(([label, data]) => ({
-        label, data, tension: 0.25, borderWidth: 2, pointRadius: 0
-      }));
-      return new Chart(ctx, {
-        type: 'line',
-        data: { labels: payload.labels, datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'nearest', intersect: false },
-          plugins: { legend: { position: 'bottom' } },
-          scales: { x: { ticks: { maxTicksLimit: 12 } }, y: { beginAtZero: true } }
-        }
-      });
+    function renderTable(rows) {
+      const tbody = document.getElementById('tbody');
+      tbody.innerHTML = '';
+      // 最新が下に溜まっていく想定なので新しい順に表示
+      const latestFirst = rows.slice(-336).reverse(); // 7日×48件=336行を目安に
+      for (const r of latestFirst) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="nowrap">${r.time || '—'}</td>
+          <td>${r.gen || '—'}</td>
+          <td>${r.cons || '—'}</td>
+          <td>${r.sell || '—'}</td>
+          <td>${r.buy  || '—'}</td>
+          <td>${r.self || '—'}</td>
+        `;
+        tbody.appendChild(tr);
+      }
     }
 
-    (async () => {
+    function renderTotals(rows) {
+      const last7days = {};
+      for (const r of rows) {
+        if (!r.time) continue;
+        const d = r.time.slice(0,10);
+        const toN = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+        if (!last7days[d]) last7days[d] = {gen:0, cons:0, sell:0, self:0};
+        last7days[d].gen  += toN(r.gen);
+        last7days.cons += toN(r.cons);
+        last7days.sell += toN(r.sell);
+        last7days.self += toN(r.self);
+      }
+      const days = Object.keys(last7days).sort().slice(-7);
+      const wrap = document.getElementById('totals');
+      wrap.innerHTML = '';
+      for (const d of days) {
+        const box = document.createElement('div');
+        const v = last7days[d];
+        box.className = 'pill';
+        box.textContent = `${d}｜発${v.gen.toFixed(1)} 使${v.cons.toFixed(1)} 売${v.sell.toFixed(1)} 自${v.self.toFixed(1)}`;
+        wrap.appendChild(box);
+      }
+    }
+
+    async function refresh() {
       try {
-        const ctx = document.getElementById('tsChart').getContext('2d');
-        const payload = await loadCsv();
-        const chart = makeChart(ctx, payload);
-        document.getElementById('last-updated').textContent =
-          payload.labels[payload.labels.length - 1] || '—';
-
-        // 60秒ごとに再読込
-        setInterval(async () => {
-          try {
-            const p = await loadCsv();
-            chart.data.labels = p.labels;
-            chart.data.datasets = Object.entries(p.series).map(([label, data]) => ({
-              label, data, tension: 0.25, pointRadius: 0, borderWidth: 2
-            }));
-            document.getElementById('last-updated').textContent =
-              p.labels[p.labels.length - 1] || '—';
-            chart.update();
-          } catch (e) {
-            console.error(e);
-          }
-        }, 60000);
+        const text = await fetchCsv();
+        const rows = parseCsv(text);
+        renderTable(rows);
+        const times = rows.map(r => r.time).filter(Boolean);
+        document.querySelector('.subtitle span').textContent = times.length ? times[times.length-1] : '—';
+        renderTotals(rows);
       } catch (e) {
         console.error(e);
       }
+    }
+
+    // 初回表示 & 以降1分ごとに更新
+    (async () => {
+      await refresh();
+      setInterval(refresh, 60000);
     })();
   </script>
 </body>

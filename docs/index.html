@@ -8,16 +8,20 @@
   <style>
     :root { --bg:#0b1020; --fg:#e8eefc; --card:#141a2a; --muted:#8aa0b3; }
     *{ box-sizing:border-box }
-    body{ margin:0; background:var(--bg); color:var(--fg); font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto }
-    header{ padding:16px 20px; border-bottom:1px solid rgba(255,255,255,.12); display:flex; justify-content:space-between; align-items:center }
+    body{ margin:0; background:var(--bg); color:var(--fg);
+          font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto; }
+    header{ padding:16px 20px; border-bottom:1px solid rgba(255,255,255,.12);
+            display:flex; justify-content:space-between; align-items:center; }
     .title{ font-size:20px; font-weight:700 }
     .subtitle{ font-size:14px; color:var(--muted) }
-    main{ max-width:1100px; margin:0 auto; padding:16px }
-    .card{ background:var(--card); border-radius:12px; padding:12px; box-shadow:0 6px 20px rgba(0,0,0,.25) }
+    main{ max-width:1100px; margin:0 auto; padding:16px; }
+    .card{ background:var(--card); border-radius:12px; padding:12px;
+           box-shadow:0 6px 20px rgba(0,0,0,.25); }
     h2{ margin:4px 0 12px 0; font-size:18px }
     .table-wrap{ overflow-x:auto }
     table{ width:100%; border-collapse:collapse; font-size:14px }
-    th, td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); white-space:nowrap; text-align:left }
+    th, td{ padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.08);
+            white-space:nowrap; text-align:left; }
     tr:hover{ background:rgba(255,255,255,0.06) }
     .muted{ color:var(--muted); margin-top:8px }
   </style>
@@ -37,7 +41,7 @@
           <tbody id="tbody"></tbody>
         </table>
       </div>
-      <div class="muted">※ CSVは30分ごとに更新されます（ブラウザをリロードして最新を表示）。</div>
+      <div class="muted">※ CSVは30分ごとに更新されます。ブラウザをリロードして最新を表示します。</div>
     </div>
   </main>
 
@@ -49,9 +53,10 @@
       if (!res.ok) throw new Error('CSV 読み込み失敗: ' + res.status);
       const text = await res.text();
       const lines = text.trim().split(/\\r?\\n/);
-      if (!lines.length) return { header:[], rows:[] };
-      const header = lines.shift().split(',');
-      const rows = lines.map(l => l.split(','));
+      if (lines.length < 1) return { header: [], rows: [] };
+
+      const header = lines[0].split(',');
+      const rows = lines.slice(1).map(line => line.split(','));
       return { header, rows };
     }
 
@@ -61,41 +66,39 @@
       thead.innerHTML = '';
       tbody.innerHTML = '';
 
-      // ヘッダ
-      const htr = document.createElement('tr');
-      header.forEach(h => {
+      // ヘッダー行
+      const headRow = document.createElement('tr');
+      for (const h of header) {
         const th = document.createElement('th');
         th.textContent = h;
-        htr.appendChild(th);
-      });
-      thead.appendChild(htr);
+        headRow.appendChild(th);
+      }
+      thead.appendChild(headRow);
 
-      // 行
-      rows.forEach(cols => {
+      // データ行
+      for (const cols of rows) {
         const tr = document.createElement('tr');
-        cols.forEach(c => {
+        for (const c of cols) {
           const td = document.createElement('td');
           td.textContent = c || '—';
           tr.appendChild(td);
-        });
+        }
         tbody.appendChild(tr);
-      });
+      }
 
-      // 最終更新日時
-      const iTime = header.indexOf('page_time_jst');
-      if (iTime >= 0 && rows.length) {
-        const last = rows[rows.length - 1][iTime];
-        document.getElementById('last-updated').textContent = last || '—';
+      // 最終更新
+      const idx = header.indexOf('page_time_jst');
+      if (idx >= 0 && rows.length) {
+        document.getElementById('last-updated').textContent = rows[rows.length - 1][idx] || '—';
       }
     }
 
-    // ページ読み込み時に1回だけ実行
     (async () => {
       try {
         const data = await loadCsv();
         renderTable(data);
-      } catch (e) {
-        console.error(e);
+      } catch (err) {
+        console.error(err);
       }
     })();
   </script>

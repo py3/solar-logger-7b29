@@ -1,139 +1,372 @@
 <!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="robots" content="noindex, nofollow" />
-  <title>PV Logger — 直近ログ（デバッグ）</title>
-  <style>
-    :root { --bg:#0b1020; --fg:#e8eefc; --card:#141a2a; --muted:#8aa0b3; }
-    *{ box-sizing:border-box }
-    body{ margin:0; background:var(--bg); color:var(--fg);
-          font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto }
-    header{ padding:16px 20px; border-bottom:1px solid rgba(255,255,255,.12);
-            display:flex; justify-content:space-between; align-items:center }
-    .title{ font-size:20px; font-weight:700 }
-    .subtitle{ font-size:14px; color:var(--muted) }
-    main{ max-width:1100px; margin:0 auto; padding:16px }
-    .card{ background:var(--card); border-radius:12px; padding:12px;
-           box-shadow:0 6px 20px rgba(0,0,0,.25) }
-    h2{ margin:4px 0 12px 0; font-size:18px }
-    .table-wrap{ overflow-x:auto }
-    table{ width:100%; border-collapse:collapse; font-size:14px }
-    th, td{ padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.08);
-            white-space:nowrap; text-align:left }
-    tr:hover{ background:rgba(255,255,255,0.06) }
-    .muted{ color:var(--muted); margin-top:8px }
-    pre#debug{ white-space:pre-wrap; background:#0f172a; padding:10px; border-radius:8px; overflow:auto }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="title">PV Logger</div>
-    <div class="subtitle">最終更新: <span id="last-updated">—</span></div>
-  </header>
-
-  <main>
-    <div class="card">
-      <h2>直近ログ（<code>docs/data/pv_log.csv</code>）</h2>
-
-      <div class="table-wrap">
-        <table id="tbl">
-          <thead id="thead"></thead>
-          <tbody id="tbody"></tbody>
-        </table>
-      </div>
-
-      <div class="muted">※ CSVは30分ごとにActionsで更新。最新を見るにはページを再読み込みしてください。</div>
-
-      <h3>デバッグ: パース結果</h3>
-      <pre id="debug">Parsing…</pre>
-    </div>
-  </main>
-
-  <script>
-    const CSV_PATH = './data/pv_log.csv';
-
-    // 1) すべての改行(\r\n|\n|\r)を確実に扱う行分割
-    function splitLines(text){
-      return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(Boolean);
-    }
-
-    // 2) ダブルクオート対応の1行パーサ（将来フィールド内にカンマがあってもOK）
-    function parseCsvLine(line){
-      const out = [];
-      let cur = '', q = false;
-      for(let i=0;i<line.length;i++){
-        const ch = line[i];
-        if(ch === '"'){
-          if(q && line[i+1] === '"'){ cur += '"'; i++; continue; }
-          q = !q;
-        }else if(ch === ',' && !q){
-          out.push(cur); cur = '';
-        }else{
-          cur += ch;
-        }
-      }
-      out.push(cur);
-      return out.map(s => s.replace(/^"(.*)"$/, '$1'));
-    }
-
-    async function loadCsv(){
-      const res = await fetch(CSV_PATH + '?t=' + Date.now(), { cache:'no-store' });
-      if(!res.ok) throw new Error('CSV 読み込み失敗: ' + res.status);
-      const text = await res.text();
-
-      const lines = splitLines(text);
-      if(!lines.length) return { header:[], rows:[], raw:text };
-
-      const header = parseCsvLine(lines[0]);
-      const rows = lines.slice(1).map(parseCsvLine);
-      return { header, rows, raw:text, firstLines: lines.slice(0, Math.min(5, lines.length)) };
-    }
-
-    function renderTable({ header, rows }){
-      const thead = document.getElementById('thead');
-      const tbody = document.getElementById('tbody');
-      thead.innerHTML = ''; tbody.innerHTML = '';
-
-      // ヘッダー
-      const trh = document.createElement('tr');
-      header.forEach(h => { const th = document.createElement('th'); th.textContent = h; trh.appendChild(th); });
-      thead.appendChild(trh);
-
-      // データ行
-      rows.forEach(cols => {
-        const tr = document.createElement('tr');
-        cols.forEach(c => { const td = document.createElement('td'); td.textContent = c || '—'; tr.appendChild(td); });
-        tbody.appendChild(tr);
-      });
-
-      // 最終更新
-      const iTime = header.indexOf('page_time_jst');
-      if(iTime >= 0 && rows.length){
-        document.getElementById('last-updated').textContent = rows[rows.length-1][iTime] || '—';
-      }
-    }
-
-    (async () => {
-      try{
-        const data = await loadCsv();
-
-        // デバッグ出力（中身を人間の目で確認）
-        const dbg = document.getElementById('debug');
-        dbg.textContent =
-          'lines.length = ' + splitLines(data.raw).length + '\\n' +
-          'header.length = ' + data.header.length + '\\n' +
-          'header = ' + JSON.stringify(data.header) + '\\n' +
-          'rows.length = ' + data.rows.length + '\\n' +
-          'first lines (raw) =\\n' + data.firstLines.join('\\n');
-
-        renderTable(data);
-      }catch(e){
-        console.error(e);
-        document.getElementById('debug').textContent = 'エラー: ' + e.message;
-      }
-    })();
-  </script>
-</body>
-</html>
+<html lang="ja"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>PV Logger — 直近ログ</title>
+<style>
+:root { --bg:#0b1020; --fg:#e8eefc; --card:#141a2a; --muted:#8aa0b3; }
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
+header{padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.12);display:flex;justify-content:space-between;align-items:center}
+.title{font-size:20px;font-weight:700}
+.subtitle{font-size:14px;color:var(--muted)}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.card{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+h2{margin:4px 0 12px 0;font-size:18px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;text-align:left}
+tr:hover{background:rgba(255,255,255,0.06)}
+.muted{color:var(--muted);margin-top:8px}
+</style>
+</head><body>
+<header>
+  <div class="title">PV Logger</div>
+  <div class="subtitle">最終更新: <span>2025-11-12T15:30+09:00</span>（生成: 2025-11-12 15:30）</div>
+</header>
+<main>
+  <div class="card">
+    <h2>直近ログ（docs/data/pv_log.csv）</h2>
+    <table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>page_time_jst</th>
+      <th>scrape_time_jst</th>
+      <th>sell_kwh</th>
+      <th>buy_kwh</th>
+      <th>cons_kwh</th>
+      <th>self_kwh</th>
+      <th>gen_kwh</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2025-11-11T18:24+09:00</td>
+      <td>2025-11-11T18:24+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>2025-11-11T18:35+09:00</td>
+      <td>2025-11-11T18:36+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-11T18:47+09:00</td>
+      <td>2025-11-11T18:47+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-11T18:53+09:00</td>
+      <td>2025-11-11T18:53+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-11T19:14+09:00</td>
+      <td>2025-11-11T19:15+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-11T19:42+09:00</td>
+      <td>2025-11-11T19:45+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-11T20:13+09:00</td>
+      <td>2025-11-11T20:13+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-11T20:37+09:00</td>
+      <td>2025-11-11T20:37+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-11T21:36+09:00</td>
+      <td>2025-11-11T21:36+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-11T22:47+09:00</td>
+      <td>2025-11-11T22:48+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-11T23:13+09:00</td>
+      <td>2025-11-11T23:13+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-11T23:43+09:00</td>
+      <td>2025-11-11T23:43+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T00:14+09:00</td>
+      <td>2025-11-12T00:14+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>18.1</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T00:41+09:00</td>
+      <td>2025-11-12T00:41+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>2025-11-12T01:47+09:00</td>
+      <td>2025-11-12T01:47+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T02:12+09:00</td>
+      <td>2025-11-12T02:12+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T02:40+09:00</td>
+      <td>2025-11-12T02:40+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T03:48+09:00</td>
+      <td>2025-11-12T03:48+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T04:11+09:00</td>
+      <td>2025-11-12T04:11+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T04:35+09:00</td>
+      <td>2025-11-12T04:35+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T05:14+09:00</td>
+      <td>2025-11-12T05:14+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T05:40+09:00</td>
+      <td>2025-11-12T05:40+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T06:14+09:00</td>
+      <td>2025-11-12T06:14+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T06:36+09:00</td>
+      <td>2025-11-12T06:36+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T07:12+09:00</td>
+      <td>2025-11-12T07:13+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T07:40+09:00</td>
+      <td>2025-11-12T07:40+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T08:12+09:00</td>
+      <td>2025-11-12T08:12+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>1.4</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T08:37+09:00</td>
+      <td>2025-11-12T08:37+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>1.4</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T10:02+09:00</td>
+      <td>2025-11-12T10:02+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>2025-11-12T11:42+09:00</td>
+      <td>2025-11-12T11:44+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>9.9</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T12:44+09:00</td>
+      <td>2025-11-12T12:44+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>12.2</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T13:24+09:00</td>
+      <td>2025-11-12T13:24+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>13.4</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T13:46+09:00</td>
+      <td>2025-11-12T13:46+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>14.5</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T14:20+09:00</td>
+      <td>2025-11-12T14:20+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>15.6</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T14:43+09:00</td>
+      <td>2025-11-12T14:43+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>16.3</td>
+    </tr>
+    <tr>
+      <td>2025-11-12T15:30+09:00</td>
+      <td>2025-11-12T15:30+09:00</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>16.9</td>
+    </tr>
+  </tbody>
+</table>
+    <p class="muted">※ CSV/HTML はスケジュール実行で更新。最新を見るにはページを再読み込みしてください。</p>
+  </div>
+</main>
+</body></html>

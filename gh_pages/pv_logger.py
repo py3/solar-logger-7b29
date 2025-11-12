@@ -69,8 +69,8 @@ def run_once():
             page.fill(cfg.us, cfg.username)
             page.fill(cfg.ps, cfg.password)
             page.click(cfg.sb)
-            page.wait_for_load_state("networkidle", timeout=20000)
-            page.goto(cfg.dashboard_url, timeout=20000)
+            page.wait_for_load_state("networkidle", timeout=30000)
+            page.goto(cfg.dashboard_url, timeout=30000)
             try:
                 page.wait_for_selector(cfg.sels[-1], timeout=15000)
             except PWTimeout:

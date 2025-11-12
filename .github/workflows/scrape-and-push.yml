@@ -2,7 +2,7 @@ name: scrape-and-push
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # 30分ごと
+    - cron: "15,45 * * * *"   # 30分ごと
   workflow_dispatch:
 
 jobs:

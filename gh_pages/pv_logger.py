@@ -59,12 +59,13 @@ def parse_time(s: str):
     return None
 
 def write_html_snapshot(csv_path: Path, out_html: Path, max_rows: int = 500):
-    """CSVのスナップショットから軽量な静的HTMLを生成"""
+    """CSVから軽量な静的HTMLを生成（外部CSSを読み込む版）"""
     out_html.parent.mkdir(parents=True, exist_ok=True)
     if not csv_path.exists():
         table_html = "<p>CSVがまだありません。</p>"
         last_ts = "—"
     else:
+        import pandas as pd
         df = pd.read_csv(csv_path).fillna("")
         df = df.tail(max_rows)
         last_ts = df["page_time_jst"].iloc[-1] if len(df) else "—"
@@ -77,21 +78,7 @@ def write_html_snapshot(csv_path: Path, out_html: Path, max_rows: int = 500):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>PV Logger — 直近ログ</title>
-<style>
-:root {{ --bg:#0b1020; --fg:#e8eefc; --card:#141a2a; --muted:#8aa0b3; }}
-*{{box-sizing:border-box}}
-body{{margin:0;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}}
-header{{padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.12);display:flex;justify-content:space-between;align-items:center}}
-.title{{font-size:20px;font-weight:700}}
-.subtitle{{font-size:14px;color:var(--muted)}}
-main{{max-width:1100px;margin:0 auto;padding:16px}}
-.card{{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,.25)}}
-h2{{margin:4px 0 12px 0;font-size:18px}}
-table{{width:100%;border-collapse:collapse;font-size:14px}}
-th,td{{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;text-align:left}}
-tr:hover{{background:rgba(255,255,255,0.06)}}
-.muted{{color:var(--muted);margin-top:8px}}
-</style>
+<link rel="stylesheet" href="./style.css">
 </head><body>
 <header>
   <div class="title">PV Logger</div>

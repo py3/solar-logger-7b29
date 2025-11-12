@@ -4,26 +4,23 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>PV Logger — 直近ログ</title>
+  <title>PV Logger — 直近ログ（デバッグ）</title>
   <style>
     :root { --bg:#0b1020; --fg:#e8eefc; --card:#141a2a; --muted:#8aa0b3; }
     *{ box-sizing:border-box }
-    body{ margin:0; background:var(--bg); color:var(--fg);
-          font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto; }
-    header{ padding:16px 20px; border-bottom:1px solid rgba(255,255,255,.12);
-            display:flex; justify-content:space-between; align-items:center; }
+    body{ margin:0; background:var(--bg); color:var(--fg); font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto }
+    header{ padding:16px 20px; border-bottom:1px solid rgba(255,255,255,.12); display:flex; justify-content:space-between; align-items:center }
     .title{ font-size:20px; font-weight:700 }
     .subtitle{ font-size:14px; color:var(--muted) }
-    main{ max-width:1100px; margin:0 auto; padding:16px; }
-    .card{ background:var(--card); border-radius:12px; padding:12px;
-           box-shadow:0 6px 20px rgba(0,0,0,.25); }
+    main{ max-width:1100px; margin:0 auto; padding:16px }
+    .card{ background:var(--card); border-radius:12px; padding:12px; box-shadow:0 6px 20px rgba(0,0,0,.25) }
     h2{ margin:4px 0 12px 0; font-size:18px }
     .table-wrap{ overflow-x:auto }
     table{ width:100%; border-collapse:collapse; font-size:14px }
-    th, td{ padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.08);
-            white-space:nowrap; text-align:left; }
+    th, td{ padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.08); white-space:nowrap; text-align:left }
     tr:hover{ background:rgba(255,255,255,0.06) }
     .muted{ color:var(--muted); margin-top:8px }
+    pre#debug { white-space: pre-wrap; background:#0f172a; padding:10px; border-radius:8px; overflow:auto }
   </style>
 </head>
 <body>
@@ -35,70 +32,120 @@
   <main>
     <div class="card">
       <h2>直近ログ（<code>docs/data/pv_log.csv</code>）</h2>
+
       <div class="table-wrap">
         <table id="tbl">
           <thead id="thead"></thead>
           <tbody id="tbody"></tbody>
         </table>
       </div>
-      <div class="muted">※ CSVは30分ごとに更新されます。ブラウザをリロードして最新を表示します。</div>
+
+      <div class="muted">※ CSVは30分ごとに更新されます。最新を見るにはページを再読み込みしてください。</div>
+
+      <h3>デバッグ: パース結果</h3>
+      <pre id="debug">Parsing…</pre>
     </div>
   </main>
 
   <script>
     const CSV_PATH = './data/pv_log.csv';
 
+    // 安全な1行パーサ（将来フィールドにカンマが混ざってもOK）
+    function splitCsvLine(line) {
+      const out = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          // 直前も " ならエスケープとみなす
+          if (inQuotes && line[i+1] === '"') { cur += '"'; i++; continue; }
+          inQuotes = !inQuotes;
+        } else if (ch === ',' && !inQuotes) {
+          out.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      out.push(cur);
+      // 先頭末尾のダブルクオートを外す
+      return out.map(s => s.replace(/^"(.*)"$/, '$1'));
+    }
+
     async function loadCsv() {
-      const res = await fetch(CSV_PATH + '?t=' + Date.now(), { cache:'no-store' });
+      const res = await fetch(CSV_PATH + '?t=' + Date.now(), { cache: 'no-store' });
       if (!res.ok) throw new Error('CSV 読み込み失敗: ' + res.status);
       const text = await res.text();
-      const lines = text.trim().split(/\\r?\\n/);
-      if (lines.length < 1) return { header: [], rows: [] };
 
-      const header = lines[0].split(',');
-      const rows = lines.slice(1).map(line => line.split(','));
-      return { header, rows };
+      // 行に分割（CRLF/CR/ LF すべて対応）
+      const lines = text.split(/\\r?\\n/).filter(Boolean);
+      if (!lines.length) return { header: [], rows: [] };
+
+      const header = splitCsvLine(lines[0]);
+      const rows = lines.slice(1).map(splitCsvLine);
+      return { header, rows, rawSample: lines.slice(0, Math.min(5, lines.length)).join('\\n') };
     }
 
     function renderTable({ header, rows }) {
       const thead = document.getElementById('thead');
-      const tbody = document.getElementById('tbody');
+      const tbody = findOrCreateTbody();
       thead.innerHTML = '';
       tbody.innerHTML = '';
 
-      // ヘッダー行
-      const headRow = document.createElement('tr');
-      for (const h of header) {
+      // ヘッダ
+      const headTr = document.createElement('tr');
+      header.forEach(h => {
         const th = document.createElement('th');
         th.textContent = h;
-        headRow.appendChild(th);
-      }
-      thead.appendChild(headRow);
+        headTr.appendChild(th);
+      });
+      thead.appendChild(headTr);
 
       // データ行
-      for (const cols of rows) {
+      rows.forEach(cols => {
         const tr = document.createElement('tr');
-        for (const c of cols) {
+        cols.forEach(c => {
           const td = document.createElement('td');
           td.textContent = c || '—';
           tr.appendChild(td);
-        }
+        });
         tbody.appendChild(tr);
-      }
+      });
 
       // 最終更新
-      const idx = header.indexOf('page_time_jst');
-      if (idx >= 0 && rows.length) {
-        document.getElementById('last-updated').textContent = rows[rows.length - 1][idx] || '—';
+      const timeIdx = header.indexOf('page_time_jst');
+      if (timeIdx >= 0 && rows.length) {
+        document.getElementById('last-used')?.remove?.();
+        const last = rows[rows.length - 1][timeIdx];
+        document.getElementById('last-updated').textContent = last || '—';
       }
+    }
+
+    function findOrCreateTbody() {
+      let tbody = document.getElementById('tbody');
+      if (!tbody) {
+        tbody = document.createElement('tbody');
+        tbody.id = 'tbody';
+        document.getElementById('tbl').appendChild(tbody);
+      }
+      return tbody;
     }
 
     (async () => {
       try {
         const data = await loadCsv();
+        // デバッグ出力：ヘッダ配列と先頭数行を確認
+        const debugEl = document.getElementById('debug');
+        debugEl.textContent =
+          'Header: ' + JSON.stringify(data.header) + '\\n' +
+          'Rows (first few):\\n' + data.rawSample;
+
+        renderSince = data; // 変数を残しておくと、DevToolsから中身を確認可能
         renderTable(data);
-      } catch (err) {
-        console.error(err);
+      } catch (e) {
+        console.error(e);
+        document.getElementById('debug').textContent = 'エラー: ' + e.message;
       }
     })();
   </script>

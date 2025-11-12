@@ -58,6 +58,55 @@ def parse_time(s: str):
             pass
     return None
 
+def write_html_snapshot(csv_path: Path, out_html: Path, max_rows: int = 500):
+    """CSVのスナップショットから軽量な静的HTMLを生成"""
+    out_html.parent.mkdir(parents=True, exist_ok=True)
+    if not csv_path.exists():
+        table_html = "<p>CSVがまだありません。</p>"
+        last_ts = "—"
+    else:
+        df = pd.read_csv(csv_path).fillna("")
+        df = df.tail(max_rows)
+        last_ts = df["page_time_jst"].iloc[-1] if len(df) else "—"
+        table_html = df.to_html(index=False, escape=True, border=0)
+
+    now = dt.datetime.now(tz=JST).strftime("%Y-%m-%d %H:%M")
+    html = f"""<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>PV Logger — 直近ログ</title>
+<style>
+:root {{ --bg:#0b1020; --fg:#e8eefc; --card:#141a2a; --muted:#8aa0b3; }}
+*{{box-sizing:border-box}}
+body{{margin:0;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}}
+header{{padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.12);display:flex;justify-content:space-between;align-items:center}}
+.title{{font-size:20px;font-weight:700}}
+.subtitle{{font-size:14px;color:var(--muted)}}
+main{{max-width:1100px;margin:0 auto;padding:16px}}
+.card{{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,.25)}}
+h2{{margin:4px 0 12px 0;font-size:18px}}
+table{{width:100%;border-collapse:collapse;font-size:14px}}
+th,td{{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;text-align:left}}
+tr:hover{{background:rgba(255,255,255,0.06)}}
+.muted{{color:var(--muted);margin-top:8px}}
+</style>
+</head><body>
+<header>
+  <div class="title">PV Logger</div>
+  <div class="subtitle">最終更新: <span>{last_ts}</span>（生成: {now}）</div>
+</header>
+<main>
+  <div class="card">
+    <h2>直近ログ（docs/data/pv_log.csv）</h2>
+    {table_html}
+    <p class="muted">※ CSV/HTML はスケジュール実行で更新。最新を見るにはページを再読み込みしてください。</p>
+  </div>
+</main>
+</body></html>"""
+    out_html.write_text(html, encoding="utf-8")
+
 def run_once():
     cfg = load_cfg()
     with sync_playwright() as p:
@@ -104,6 +153,8 @@ def run_once():
         df = pd.DataFrame([row])
     df.to_csv(cfg.data_csv, index=False)
     print("OK:", row)
+    
+    write_html_snapshot(Path("docs/data/pv_log.csv"), Path("docs/index.html"))
 
 if __name__ == "__main__":
     run_once()

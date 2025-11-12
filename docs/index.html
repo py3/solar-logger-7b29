@@ -8,19 +8,23 @@
   <style>
     :root { --bg:#0b1020; --fg:#e8eefc; --card:#141a2a; --muted:#8aa0b3; }
     *{ box-sizing:border-box }
-    body{ margin:0; background:var(--bg); color:var(--fg); font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto }
-    header{ padding:16px 20px; border-bottom:1px solid rgba(255,255,255,.12); display:flex; justify-content:space-between; align-items:center }
+    body{ margin:0; background:var(--bg); color:var(--fg);
+          font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto }
+    header{ padding:16px 20px; border-bottom:1px solid rgba(255,255,255,.12);
+            display:flex; justify-content:space-between; align-items:center }
     .title{ font-size:20px; font-weight:700 }
     .subtitle{ font-size:14px; color:var(--muted) }
     main{ max-width:1100px; margin:0 auto; padding:16px }
-    .card{ background:var(--card); border-radius:12px; padding:12px; box-shadow:0 6px 20px rgba(0,0,0,.25) }
+    .card{ background:var(--card); border-radius:12px; padding:12px;
+           box-shadow:0 6px 20px rgba(0,0,0,.25) }
     h2{ margin:4px 0 12px 0; font-size:18px }
     .table-wrap{ overflow-x:auto }
     table{ width:100%; border-collapse:collapse; font-size:14px }
-    th, td{ padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.08); white-space:nowrap; text-align:left }
+    th, td{ padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.08);
+            white-space:nowrap; text-align:left }
     tr:hover{ background:rgba(255,255,255,0.06) }
     .muted{ color:var(--muted); margin-top:8px }
-    pre#debug { white-space: pre-wrap; background:#0f172a; padding:10px; border-radius:8px; overflow:auto }
+    pre#debug{ white-space:pre-wrap; background:#0f172a; padding:10px; border-radius:8px; overflow:auto }
   </style>
 </head>
 <body>
@@ -40,7 +44,7 @@
         </table>
       </div>
 
-      <div class="muted">※ CSVは30分ごとに更新されます。最新を見るにはページを再読み込みしてください。</div>
+      <div class="muted">※ CSVは30分ごとにActionsで更新。最新を見るにはページを再読み込みしてください。</div>
 
       <h3>デバッグ: パース結果</h3>
       <pre id="debug">Parsing…</pre>
@@ -50,100 +54,82 @@
   <script>
     const CSV_PATH = './data/pv_log.csv';
 
-    // 安全な1行パーサ（将来フィールドにカンマが混ざってもOK）
-    function splitCsvLine(line) {
+    // 1) すべての改行(\r\n|\n|\r)を確実に扱う行分割
+    function splitLines(text){
+      return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(Boolean);
+    }
+
+    // 2) ダブルクオート対応の1行パーサ（将来フィールド内にカンマがあってもOK）
+    function parseCsvLine(line){
       const out = [];
-      let cur = '';
-      let inQuotes = false;
-      for (let i = 0; i < line.length; i++) {
+      let cur = '', q = false;
+      for(let i=0;i<line.length;i++){
         const ch = line[i];
-        if (ch === '"') {
-          // 直前も " ならエスケープとみなす
-          if (inQuotes && line[i+1] === '"') { cur += '"'; i++; continue; }
-          inQuotes = !inQuotes;
-        } else if (ch === ',' && !inQuotes) {
-          out.push(cur);
-          cur = '';
-        } else {
+        if(ch === '"'){
+          if(q && line[i+1] === '"'){ cur += '"'; i++; continue; }
+          q = !q;
+        }else if(ch === ',' && !q){
+          out.push(cur); cur = '';
+        }else{
           cur += ch;
         }
       }
       out.push(cur);
-      // 先頭末尾のダブルクオートを外す
       return out.map(s => s.replace(/^"(.*)"$/, '$1'));
     }
 
-    async function loadCsv() {
-      const res = await fetch(CSV_PATH + '?t=' + Date.now(), { cache: 'no-store' });
-      if (!res.ok) throw new Error('CSV 読み込み失敗: ' + res.status);
+    async function loadCsv(){
+      const res = await fetch(CSV_PATH + '?t=' + Date.now(), { cache:'no-store' });
+      if(!res.ok) throw new Error('CSV 読み込み失敗: ' + res.status);
       const text = await res.text();
 
-      // 行に分割（CRLF/CR/ LF すべて対応）
-      const lines = text.split(/\\r?\\n/).filter(Boolean);
-      if (!lines.length) return { header: [], rows: [] };
+      const lines = splitLines(text);
+      if(!lines.length) return { header:[], rows:[], raw:text };
 
-      const header = splitCsvLine(lines[0]);
-      const rows = lines.slice(1).map(splitCsvLine);
-      return { header, rows, rawSample: lines.slice(0, Math.min(5, lines.length)).join('\\n') };
+      const header = parseCsvLine(lines[0]);
+      const rows = lines.slice(1).map(parseCsvLine);
+      return { header, rows, raw:text, firstLines: lines.slice(0, Math.min(5, lines.length)) };
     }
 
-    function renderTable({ header, rows }) {
+    function renderTable({ header, rows }){
       const thead = document.getElementById('thead');
-      const tbody = findOrCreateTbody();
-      thead.innerHTML = '';
-      tbody.innerHTML = '';
+      const tbody = document.getElementById('tbody');
+      thead.innerHTML = ''; tbody.innerHTML = '';
 
-      // ヘッダ
-      const headTr = document.createElement('tr');
-      header.forEach(h => {
-        const th = document.createElement('th');
-        th.textContent = h;
-        headTr.appendChild(th);
-      });
-      thead.appendChild(headTr);
+      // ヘッダー
+      const trh = document.createElement('tr');
+      header.forEach(h => { const th = document.createElement('th'); th.textContent = h; trh.appendChild(th); });
+      thead.appendChild(trh);
 
       // データ行
       rows.forEach(cols => {
         const tr = document.createElement('tr');
-        cols.forEach(c => {
-          const td = document.createElement('td');
-          td.textContent = c || '—';
-          tr.appendChild(td);
-        });
+        cols.forEach(c => { const td = document.createElement('td'); td.textContent = c || '—'; tr.appendChild(td); });
         tbody.appendChild(tr);
       });
 
       // 最終更新
-      const timeIdx = header.indexOf('page_time_jst');
-      if (timeIdx >= 0 && rows.length) {
-        document.getElementById('last-used')?.remove?.();
-        const last = rows[rows.length - 1][timeIdx];
-        document.getElementById('last-updated').textContent = last || '—';
+      const iTime = header.indexOf('page_time_jst');
+      if(iTime >= 0 && rows.length){
+        document.getElementById('last-updated').textContent = rows[rows.length-1][iTime] || '—';
       }
-    }
-
-    function findOrCreateTbody() {
-      let tbody = document.getElementById('tbody');
-      if (!tbody) {
-        tbody = document.createElement('tbody');
-        tbody.id = 'tbody';
-        document.getElementById('tbl').appendChild(tbody);
-      }
-      return tbody;
     }
 
     (async () => {
-      try {
+      try{
         const data = await loadCsv();
-        // デバッグ出力：ヘッダ配列と先頭数行を確認
-        const debugEl = document.getElementById('debug');
-        debugEl.textContent =
-          'Header: ' + JSON.stringify(data.header) + '\\n' +
-          'Rows (first few):\\n' + data.rawSample;
 
-        renderSince = data; // 変数を残しておくと、DevToolsから中身を確認可能
+        // デバッグ出力（中身を人間の目で確認）
+        const dbg = document.getElementById('debug');
+        dbg.textContent =
+          'lines.length = ' + splitLines(data.raw).length + '\\n' +
+          'header.length = ' + data.header.length + '\\n' +
+          'header = ' + JSON.stringify(data.header) + '\\n' +
+          'rows.length = ' + data.rows.length + '\\n' +
+          'first lines (raw) =\\n' + data.firstLines.join('\\n');
+
         renderTable(data);
-      } catch (e) {
+      }catch(e){
         console.error(e);
         document.getElementById('debug').textContent = 'エラー: ' + e.message;
       }
